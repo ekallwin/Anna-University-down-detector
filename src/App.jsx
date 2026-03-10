@@ -1,14 +1,30 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { FaDesktop, FaServer, FaSearch, FaExclamationCircle, FaCheckCircle, FaCircleNotch } from 'react-icons/fa';
 import './App.css';
 import { Analytics } from "@vercel/analytics/react"
+import OfflinePage from './Offline/Offline';
+
 function App() {
+  const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [status, setStatus] = useState('idle');
   const [checkStep, setCheckStep] = useState(0);
   const [checkResult, setCheckResult] = useState('');
   const [lastChecked, setLastChecked] = useState(null);
   const [responseTime, setResponseTime] = useState(null);
   const urlToCheck = 'https://coe.annauniv.edu/home';
+
+  useEffect(() => {
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
 
   const checkStatus = async () => {
     setStatus('checking');
@@ -84,6 +100,10 @@ function App() {
   };
 
 
+
+  if (!isOnline) {
+    return <OfflinePage />;
+  }
 
   return (
     <>
