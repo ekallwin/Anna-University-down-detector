@@ -597,3 +597,85 @@ body {
     }
   }
 }
+
+/* Flow Steps */
+.flow-container {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  width: max-content;
+  margin: 0 auto;
+}
+
+.flow-step {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  opacity: 0.5;
+  transition: all 0.3s ease;
+}
+
+.flow-step.active {
+  opacity: 1;
+}
+
+.step-icon-wrapper {
+  width: 24px;
+  height: 24px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.step-dot {
+  width: 8px;
+  height: 8px;
+  background-color: #475569;
+  border-radius: 50%;
+}
+
+.step-icon {
+  font-size: 1.2rem;
+}
+
+.step-icon.success {
+  color: #10b981;
+}
+
+.step-icon.error {
+  color: #ef4444;
+}
+
+.step-icon.spinning {
+  color: #818cf8;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+.step-label {
+  font-size: 0.95rem;
+  font-weight: 500;
+  color: #cbd5e1;
+}
+
+.flow-step.active .step-label {
+  color: #f8fafc;
+}
+
+.step-connector {
+  width: 2px;
+  height: 16px;
+  background-color: #334155;
+  margin-left: 11px;
+  transition: background-color 0.3s ease;
+}
+
+.step-connector.active {
+  background-color: #10b981;
+}

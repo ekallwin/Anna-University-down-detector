@@ -1,42 +1,88 @@
 import { useState } from 'react';
-import { FaDesktop, FaServer, FaSearch, FaExclamationCircle } from 'react-icons/fa';
+import { FaDesktop, FaServer, FaSearch, FaExclamationCircle, FaCheckCircle, FaCircleNotch } from 'react-icons/fa';
 import './App.css';
 import { Analytics } from "@vercel/analytics/react"
 function App() {
   const [status, setStatus] = useState('idle');
+  const [checkStep, setCheckStep] = useState(0);
+  const [checkResult, setCheckResult] = useState('');
   const [lastChecked, setLastChecked] = useState(null);
   const [responseTime, setResponseTime] = useState(null);
   const urlToCheck = 'https://coe.annauniv.edu/home';
 
   const checkStatus = async () => {
     setStatus('checking');
+    setCheckStep(1);
+    setCheckResult('');
     const startTime = Date.now();
-    try {
-      const timestamp = new Date().getTime();
-      const noCacheUrl = `${urlToCheck}?t=${timestamp}`;
-      const response = await fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(noCacheUrl)}`);
 
-      if (!response.ok) {
-        throw new Error('Network response was not ok');
-      }
+    await new Promise(r => setTimeout(r, 800));
 
-      const data = await response.json();
-      const timeTaken = Date.now() - startTime;
-
-      setResponseTime(timeTaken);
-      setLastChecked(new Date());
-
-      if (data.status && data.status.http_code >= 200 && data.status.http_code < 400) {
-        setStatus('up');
-      } else {
-        setStatus('down');
-      }
-    } catch (error) {
+    if (!navigator.onLine) {
+      setCheckStep(3);
+      setCheckResult('Unable to reach');
+      await new Promise(r => setTimeout(r, 800));
       setStatus('down');
       setLastChecked(new Date());
-      setResponseTime(Date.now() - startTime);
+      setResponseTime(null);
+      return;
     }
+
+    setCheckStep(2);
+
+    const MAX_RETRIES = 2;
+    const RETRY_DELAY_MS = 1500;
+
+    const proxyUrls = (timestamp) => [
+      `https://api.allorigins.win/get?url=${encodeURIComponent(`${urlToCheck}?t=${timestamp}`)}`,
+      `https://corsproxy.io/?${encodeURIComponent(`${urlToCheck}?t=${timestamp}`)}`,
+    ];
+
+    const tryFetch = async () => {
+      const timestamp = new Date().getTime();
+      const urls = proxyUrls(timestamp);
+
+      for (const url of urls) {
+        try {
+          const response = await fetch(url, { signal: AbortSignal.timeout(8000) });
+          if (!response.ok) continue;
+
+          // allorigins returns JSON with status.http_code; corsproxy returns the raw page
+          const contentType = response.headers.get('content-type') || '';
+          if (contentType.includes('application/json')) {
+            const data = await response.json();
+            if (data.status && data.status.http_code >= 200 && data.status.http_code < 400) {
+              return true;
+            }
+          } else {
+            // corsproxy returned the raw page directly — if we got here without throwing, it's up
+            return true;
+          }
+        } catch {
+          // this proxy failed, try the next one
+        }
+      }
+      return false; // both proxies failed for this attempt
+    };
+
+    let isUp = false;
+    for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+      if (attempt > 0) {
+        await new Promise((r) => setTimeout(r, RETRY_DELAY_MS));
+      }
+      isUp = await tryFetch();
+      if (isUp) break;
+    }
+
+    setCheckStep(3);
+    setCheckResult(isUp ? 'Success' : 'Unable to reach');
+    await new Promise(r => setTimeout(r, 800));
+
+    setResponseTime(Date.now() - startTime);
+    setLastChecked(new Date());
+    setStatus(isUp ? 'up' : 'down');
   };
+
 
 
   return (
@@ -90,8 +136,34 @@ function App() {
 
             {status === 'checking' && (
               <div className="status-indicator checking">
-                <span className="loader"></span>
-                <p>Checking server status...</p>
+                <div className="flow-container">
+                  <div className={`flow-step ${checkStep >= 1 ? 'active' : 'pending'}`}>
+                    <div className="step-icon-wrapper">
+                      {checkStep > 1 ? <FaCheckCircle className="step-icon success" /> : checkStep === 1 ? <FaCircleNotch className="step-icon spinning" /> : <div className="step-dot" />}
+                    </div>
+                    <span className="step-label">Request sent from your device</span>
+                  </div>
+
+                  <div className={`step-connector ${checkStep >= 2 ? 'active' : ''}`}></div>
+
+                  <div className={`flow-step ${checkStep >= 2 ? 'active' : 'pending'}`}>
+                    <div className="step-icon-wrapper">
+                      {checkStep > 2 ? <FaCheckCircle className="step-icon success" /> : checkStep === 2 ? <FaCircleNotch className="step-icon spinning" /> : <div className="step-dot" />}
+                    </div>
+                    <span className="step-label">Connecting with AU servers</span>
+                  </div>
+
+                  <div className={`step-connector ${checkStep >= 3 ? 'active' : ''}`}></div>
+
+                  <div className={`flow-step ${checkStep >= 3 ? 'active' : 'pending'}`}>
+                    <div className="step-icon-wrapper">
+                      {checkStep === 3 ? (
+                        checkResult === 'Success' ? <FaCheckCircle className="step-icon success" /> : <FaExclamationCircle className="step-icon error" />
+                      ) : <div className="step-dot" />}
+                    </div>
+                    <span className="step-label">{checkStep === 3 ? checkResult : 'Waiting for server`s response'}</span>
+                  </div>
+                </div>
               </div>
             )}
 
