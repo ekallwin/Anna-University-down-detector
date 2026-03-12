@@ -32,67 +32,91 @@ function App() {
     setCheckResult('');
     const startTime = Date.now();
 
-    await new Promise(r => setTimeout(r, 800));
-
     if (!navigator.onLine) {
       setCheckStep(3);
       setCheckResult('Unable to reach');
-      await new Promise(r => setTimeout(r, 800));
       setStatus('down');
       setLastChecked(new Date());
       setResponseTime(null);
       return;
     }
 
+    await new Promise(r => setTimeout(r, 100));
     setCheckStep(2);
 
-    const MAX_RETRIES = 2;
-    const RETRY_DELAY_MS = 1500;
-
-    const proxyUrls = (timestamp) => [
-      `https://api.allorigins.win/get?url=${encodeURIComponent(`${urlToCheck}?t=${timestamp}`)}`,
-      `https://corsproxy.io/?${encodeURIComponent(`${urlToCheck}?t=${timestamp}`)}`,
-    ];
-
-    const tryFetch = async () => {
+    const tryFetchParallel = async () => {
       const timestamp = new Date().getTime();
-      const urls = proxyUrls(timestamp);
+      const targetWithQuery = `${urlToCheck}?t=${timestamp}`;
 
-      for (const url of urls) {
-        try {
-          const response = await fetch(url, { signal: AbortSignal.timeout(8000) });
-          if (!response.ok) continue;
+      const proxyTemplates = [
+        import.meta.env.VITE_PROXY_1,
+        import.meta.env.VITE_PROXY_2,
+        import.meta.env.VITE_PROXY_3
+      ];
 
-          // allorigins returns JSON with status.http_code; corsproxy returns the raw page
-          const contentType = response.headers.get('content-type') || '';
-          if (contentType.includes('application/json')) {
-            const data = await response.json();
-            if (data.status && data.status.http_code >= 200 && data.status.http_code < 400) {
-              return true;
-            }
-          } else {
-            // corsproxy returned the raw page directly — if we got here without throwing, it's up
-            return true;
+      const urls = proxyTemplates.map(template => `${template}${encodeURIComponent(targetWithQuery)}`);
+
+      return new Promise((resolve) => {
+        let failures = 0;
+        let hasResolved = false;
+
+        const handleSuccess = () => {
+          if (!hasResolved) {
+            hasResolved = true;
+            resolve(true);
           }
-        } catch {
-          // this proxy failed, try the next one
-        }
-      }
-      return false; // both proxies failed for this attempt
+        };
+
+        const handleFailure = (immediate = false) => {
+          failures++;
+          if ((immediate || failures === urls.length) && !hasResolved) {
+            hasResolved = true;
+            resolve(false);
+          }
+        };
+
+        urls.forEach(async (url) => {
+          try {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 10000);
+            const response = await fetch(url, { signal: controller.signal });
+            clearTimeout(timeoutId);
+
+            if (!response.ok) {
+              handleFailure(response.status >= 500);
+              return;
+            }
+
+            if (url.includes('allorigins')) {
+              const data = await response.json();
+              if (data.status && data.status.http_code >= 200 && data.status.http_code < 400) {
+                handleSuccess();
+              } else if (data.status && data.status.http_code >= 500) {
+                handleFailure(true);
+              } else {
+                handleFailure();
+              }
+            } else {
+              handleSuccess();
+            }
+          } catch {
+            handleFailure();
+          }
+        });
+      });
     };
 
-    let isUp = false;
-    for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
-      if (attempt > 0) {
-        await new Promise((r) => setTimeout(r, RETRY_DELAY_MS));
-      }
-      isUp = await tryFetch();
-      if (isUp) break;
+    let isUp = await tryFetchParallel();
+
+    if (!isUp) {
+      await new Promise(r => setTimeout(r, 1000));
+      isUp = await tryFetchParallel();
     }
 
     setCheckStep(3);
     setCheckResult(isUp ? 'Success' : 'Unable to reach');
-    await new Promise(r => setTimeout(r, 800));
+
+    await new Promise(r => setTimeout(r, 1500));
 
     setResponseTime(Date.now() - startTime);
     setLastChecked(new Date());
@@ -127,10 +151,10 @@ function App() {
             <div className="pathway">
               <div className="path-line request-line">
                 <span className="path-text">Request</span>
-                <div className={`particle request-particle ${status === 'checking' ? 'active' : ''}`}></div>
+                <div className={`particle request-particle ${status === 'checking' && checkStep < 3 ? 'active' : ''}`}></div>
               </div>
               <div className="path-line response-line">
-                <div className={`particle response-particle ${status === 'up' || status === 'down' ? `active ${status}` : ''}`}></div>
+                <div className={`particle response-particle ${status === 'up' || status === 'down' || (status === 'checking' && checkStep === 3) ? `active ${status === 'up' || checkResult === 'Success' ? 'up' : 'down'}` : ''}`}></div>
                 <span className="path-text">Response</span>
               </div>
             </div>
@@ -227,7 +251,7 @@ function App() {
             {responseTime !== null && (
               <div className="detail-item">
                 <span className="detail-label">Response Time</span>
-                <span className="detail-value">{responseTime}ms</span>
+                <span className="detail-value">{responseTime} milliseconds</span>
               </div>
             )}
           </section>
